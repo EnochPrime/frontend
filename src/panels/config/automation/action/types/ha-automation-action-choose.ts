@@ -1,10 +1,10 @@
 import { mdiDelete, mdiPlus } from "@mdi/js";
-import { css, CSSResultGroup, html, LitElement } from "lit";
+import { CSSResultGroup, LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators";
-import { fireEvent } from "../../../../../common/dom/fire_event";
 import { ensureArray } from "../../../../../common/array/ensure-array";
-import "../../../../../components/ha-icon-button";
+import { fireEvent } from "../../../../../common/dom/fire_event";
 import "../../../../../components/ha-button";
+import "../../../../../components/ha-icon-button";
 import { Condition } from "../../../../../data/automation";
 import { Action, ChooseAction } from "../../../../../data/script";
 import { haStyle } from "../../../../../resources/styles";

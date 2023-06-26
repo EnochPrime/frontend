@@ -50,6 +50,7 @@ const SENSOR_DEVICE_CLASSES = [
   "temperature",
   "timestamp",
   "volatile_organic_compounds",
+  "volatile_organic_compounds_parts",
   "voltage",
   "volume",
   "water",
@@ -134,6 +135,9 @@ const ENTITIES: HassEntity[] = [
   createEntity("climate.fan_only", "fan_only"),
   createEntity("climate.auto_idle", "auto", undefined, { hvac_action: "idle" }),
   createEntity("climate.auto_off", "auto", undefined, { hvac_action: "off" }),
+  createEntity("climate.auto_preheating", "auto", undefined, {
+    hvac_action: "preheating",
+  }),
   createEntity("climate.auto_heating", "auto", undefined, {
     hvac_action: "heating",
   }),
@@ -353,6 +357,7 @@ export class DemoEntityState extends LitElement {
               hass.localize,
               entry.stateObj,
               hass.locale,
+              hass.config,
               hass.entities
             )}`,
         },

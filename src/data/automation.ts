@@ -123,6 +123,14 @@ export interface TimePatternTrigger extends BaseTrigger {
 export interface WebhookTrigger extends BaseTrigger {
   platform: "webhook";
   webhook_id: string;
+  allowed_methods?: string[];
+  local_only?: boolean;
+}
+
+export interface PersistentNotificationTrigger extends BaseTrigger {
+  platform: "persistent_notification";
+  notification_id?: string;
+  update_type?: string[];
 }
 
 export interface ZoneTrigger extends BaseTrigger {
@@ -172,6 +180,7 @@ export type Trigger =
   | SunTrigger
   | TimePatternTrigger
   | WebhookTrigger
+  | PersistentNotificationTrigger
   | ZoneTrigger
   | TagTrigger
   | TimeTrigger
@@ -377,3 +386,9 @@ export const testCondition = (
     condition,
     variables,
   });
+
+export type AutomationClipboard = {
+  trigger?: Trigger;
+  condition?: Condition;
+  action?: Action;
+};

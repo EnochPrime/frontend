@@ -1,13 +1,18 @@
 import "@polymer/paper-item/paper-item";
-import { css, html, LitElement } from "lit";
+import "@polymer/paper-item/paper-item-body";
+import { css, html, LitElement, nothing } from "lit";
 import { customElement, property } from "lit/decorators";
 import { isComponentLoaded } from "../../../common/config/is_component_loaded";
 import { computeRTLDirection } from "../../../common/util/compute_rtl";
 import { CloudStatus } from "../../../data/cloud";
+import { ExposeEntitySettings } from "../../../data/expose";
+
+import "../../../layouts/hass-loading-screen";
 import "../../../layouts/hass-tabs-subpage";
 import { HomeAssistant, Route } from "../../../types";
 import "./assist-pref";
 import "./cloud-alexa-pref";
+import "./cloud-discover";
 import "./cloud-google-pref";
 import { voiceAssistantTabs } from "./ha-config-voice-assistants";
 
@@ -16,6 +21,11 @@ export class HaConfigVoiceAssistantsAssistants extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
 
   @property({ attribute: false }) public cloudStatus?: CloudStatus;
+
+  @property({ attribute: false }) public exposedEntities?: Record<
+    string,
+    ExposeEntitySettings
+  >;
 
   @property() public isWide!: boolean;
 
@@ -37,57 +47,32 @@ export class HaConfigVoiceAssistantsAssistants extends LitElement {
         .tabs=${voiceAssistantTabs}
       >
         <div class="content">
-          <assist-pref .hass=${this.hass}> </assist-pref>
-          ${this.cloudStatus?.logged_in
-            ? html`<cloud-alexa-pref
+          ${isComponentLoaded(this.hass, "assist_pipeline")
+            ? html`
+                <assist-pref
+                  .dir=${computeRTLDirection(this.hass)}
                   .hass=${this.hass}
                   .cloudStatus=${this.cloudStatus}
-                  dir=${computeRTLDirection(this.hass)}
+                  .exposedEntities=${this.exposedEntities}
+                ></assist-pref>
+              `
+            : nothing}
+          ${this.cloudStatus?.logged_in
+            ? html`
+                <cloud-alexa-pref
+                  .hass=${this.hass}
+                  .exposedEntities=${this.exposedEntities}
+                  .cloudStatus=${this.cloudStatus}
+                  .dir=${computeRTLDirection(this.hass)}
                 ></cloud-alexa-pref>
                 <cloud-google-pref
                   .hass=${this.hass}
+                  .exposedEntities=${this.exposedEntities}
                   .cloudStatus=${this.cloudStatus}
-                  dir=${computeRTLDirection(this.hass)}
-                ></cloud-google-pref>`
-            : html`<ha-card
-                  header="Easily connect to voice assistants with Home Assistant Cloud"
-                >
-                  <div class="card-content">
-                    With Home Assistant Cloud, you can connect your Home
-                    Assistant instance in a few simple clicks to both Google
-                    Assistant and Amazon Alexa. If you can connect it to Home
-                    Assistant, you can now control it with your voice using the
-                    Amazon Echo, Google Home or your Android phone.
-                  </div>
-                  <div class="card-actions">
-                    <a
-                      href="https://www.nabucasa.com"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <mwc-button>Learn more</mwc-button>
-                    </a>
-                  </div>
-                </ha-card>
-                ${isComponentLoaded(this.hass, "cloud")
-                  ? html` <ha-card outlined>
-                      <a href="/config/cloud/register">
-                        <paper-item>
-                          <paper-item-body two-line>
-                            ${this.hass.localize(
-                              "ui.panel.config.cloud.login.start_trial"
-                            )}
-                            <div secondary>
-                              ${this.hass.localize(
-                                "ui.panel.config.cloud.login.trial_info"
-                              )}
-                            </div>
-                          </paper-item-body>
-                          <ha-icon-next></ha-icon-next>
-                        </paper-item>
-                      </a>
-                    </ha-card>`
-                  : ""}`}
+                  .dir=${computeRTLDirection(this.hass)}
+                ></cloud-google-pref>
+              `
+            : html`<cloud-discover .hass=${this.hass}></cloud-discover>`}
         </div>
       </hass-tabs-subpage>
     `;

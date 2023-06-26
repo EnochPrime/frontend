@@ -138,11 +138,12 @@ export class HaBlueprintAutomationEditor extends LitElement {
                                 this.config.use_blueprint.input[key]) ??
                               value?.default}
                               .disabled=${this.disabled}
+                              .required=${value?.default === undefined}
                               @value-changed=${this._inputChanged}
                             ></ha-selector>`
                           : html`<ha-textfield
                               .key=${key}
-                              required
+                              .required=${value?.default === undefined}
                               .value=${(this.config.use_blueprint.input &&
                                 this.config.use_blueprint.input[key]) ??
                               value?.default}
@@ -194,7 +195,14 @@ export class HaBlueprintAutomationEditor extends LitElement {
     }
     const input = { ...this.config.use_blueprint.input, [key]: value };
 
-    if (value === "" || value === undefined) {
+    const blueprint = this._blueprint;
+    const metaValue =
+      !blueprint || "error" in blueprint
+        ? undefined
+        : blueprint?.metadata.input && blueprint?.metadata?.input[key];
+    const keyDefault = metaValue && metaValue.default;
+
+    if ((value === "" && !keyDefault) || value === undefined) {
       delete input[key];
     }
 

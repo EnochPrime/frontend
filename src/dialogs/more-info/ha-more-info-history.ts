@@ -27,7 +27,7 @@ declare global {
   }
 }
 
-const statTypes: StatisticsTypes = ["min", "mean", "max"];
+const statTypes: StatisticsTypes = ["state", "min", "mean", "max"];
 
 @customElement("ha-more-info-history")
 export class MoreInfoHistory extends LitElement {
@@ -192,7 +192,8 @@ export class MoreInfoHistory extends LitElement {
         }
       }
     }
-    if (!isComponentLoaded(this.hass, "history") || this._subscribed) {
+
+    if (!isComponentLoaded(this.hass, "history")) {
       return;
     }
     if (this._subscribed) {

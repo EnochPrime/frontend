@@ -4,6 +4,7 @@ import {
   html,
   LitElement,
   PropertyValues,
+  ReactiveElement,
   TemplateResult,
 } from "lit";
 import { customElement, property } from "lit/decorators";
@@ -33,6 +34,8 @@ const getValue = (obj, item) =>
 
 const getError = (obj, item) => (obj && item.name ? obj[item.name] : null);
 
+const getWarning = (obj, item) => (obj && item.name ? obj[item.name] : null);
+
 @customElement("ha-form")
 export class HaForm extends LitElement implements HaFormElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
@@ -43,9 +46,13 @@ export class HaForm extends LitElement implements HaFormElement {
 
   @property() public error?: Record<string, string>;
 
+  @property() public warning?: Record<string, string>;
+
   @property({ type: Boolean }) public disabled = false;
 
   @property() public computeError?: (schema: any, error) => string;
+
+  @property() public computeWarning?: (schema: any, warning) => string;
 
   @property() public computeLabel?: (
     schema: any,
@@ -56,13 +63,18 @@ export class HaForm extends LitElement implements HaFormElement {
 
   @property() public localizeValue?: (key: string) => string;
 
-  public focus() {
-    const root = this.shadowRoot?.querySelector(".root");
+  public async focus() {
+    await this.updateComplete;
+    const root = this.renderRoot.querySelector(".root");
     if (!root) {
       return;
     }
     for (const child of root.children) {
       if (child.tagName !== "HA-ALERT") {
+        if (child instanceof ReactiveElement) {
+          // eslint-disable-next-line no-await-in-loop
+          await child.updateComplete;
+        }
         (child as HTMLElement).focus();
         break;
       }
@@ -92,12 +104,19 @@ export class HaForm extends LitElement implements HaFormElement {
           : ""}
         ${this.schema.map((item) => {
           const error = getError(this.error, item);
+          const warning = getWarning(this.warning, item);
 
           return html`
             ${error
               ? html`
                   <ha-alert own-margin alert-type="error">
                     ${this._computeError(error, item)}
+                  </ha-alert>
+                `
+              : warning
+              ? html`
+                  <ha-alert own-margin alert-type="warning">
+                    ${this._computeWarning(warning, item)}
                   </ha-alert>
                 `
               : ""}
@@ -179,6 +198,13 @@ export class HaForm extends LitElement implements HaFormElement {
 
   private _computeError(error, schema: HaFormSchema | readonly HaFormSchema[]) {
     return this.computeError ? this.computeError(error, schema) : error;
+  }
+
+  private _computeWarning(
+    warning,
+    schema: HaFormSchema | readonly HaFormSchema[]
+  ) {
+    return this.computeWarning ? this.computeWarning(warning, schema) : warning;
   }
 
   static get styles(): CSSResultGroup {

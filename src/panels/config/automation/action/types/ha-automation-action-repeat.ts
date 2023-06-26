@@ -1,6 +1,7 @@
 import { css, CSSResultGroup, html, LitElement } from "lit";
 import { customElement, property } from "lit/decorators";
 import { fireEvent } from "../../../../../common/dom/fire_event";
+import "../../../../../components/ha-textfield";
 import {
   Action,
   CountRepeat,
@@ -12,7 +13,6 @@ import { haStyle } from "../../../../../resources/styles";
 import type { HomeAssistant } from "../../../../../types";
 import type { Condition } from "../../../../lovelace/common/validate-condition";
 import "../ha-automation-action";
-import "../../../../../components/ha-textfield";
 import type { ActionElement } from "../ha-automation-action-row";
 
 const OPTIONS = ["count", "while", "until"] as const;

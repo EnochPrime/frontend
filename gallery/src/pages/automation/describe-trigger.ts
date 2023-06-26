@@ -41,6 +41,7 @@ const triggers = [
   { platform: "sun", event: "sunset" },
   { platform: "time_pattern" },
   { platform: "webhook" },
+  { platform: "persistent_notification" },
   {
     platform: "zone",
     entity_id: "person.person",
@@ -74,7 +75,7 @@ export class DemoAutomationDescribeTrigger extends LitElement {
         <div class="trigger">
           <span>
             ${this._trigger
-              ? describeTrigger(this._trigger, this.hass)
+              ? describeTrigger(this._trigger, this.hass, [])
               : "<invalid YAML>"}
           </span>
           <ha-yaml-editor
@@ -86,7 +87,7 @@ export class DemoAutomationDescribeTrigger extends LitElement {
         ${triggers.map(
           (conf) => html`
             <div class="trigger">
-              <span>${describeTrigger(conf as any, this.hass)}</span>
+              <span>${describeTrigger(conf as any, this.hass, [])}</span>
               <pre>${dump(conf)}</pre>
             </div>
           `

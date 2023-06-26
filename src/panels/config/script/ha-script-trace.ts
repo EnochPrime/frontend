@@ -191,7 +191,8 @@ export class HaScriptTrace extends LitElement {
                       html`<option value=${trace.run_id}>
                         ${formatDateTimeWithSeconds(
                           new Date(trace.timestamp.start),
-                          this.hass.locale
+                          this.hass.locale,
+                          this.hass.config
                         )}
                       </option>`
                   )}
@@ -508,7 +509,7 @@ export class HaScriptTrace extends LitElement {
         }
 
         .main {
-          height: calc(100% - var(--header-height));
+          min-height: calc(100% - var(--header-height));
           display: flex;
           background-color: var(--card-background-color);
         }

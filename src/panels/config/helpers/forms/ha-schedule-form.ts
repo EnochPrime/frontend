@@ -22,7 +22,7 @@ import "../../../../components/ha-textfield";
 import { Schedule, ScheduleDay, weekdays } from "../../../../data/schedule";
 import { haStyle } from "../../../../resources/styles";
 import { HomeAssistant } from "../../../../types";
-import { installResizeObserver } from "../../../lovelace/common/install-resize-observer";
+import { loadPolyfillIfNeeded } from "../../../../resources/resize-observer.polyfill";
 
 const defaultFullCalendarConfig: CalendarOptions = {
   plugins: [timeGridPlugin, interactionPlugin],
@@ -125,7 +125,7 @@ class HaScheduleForm extends LitElement {
 
   private async _attachObserver(): Promise<void> {
     if (!this._resizeObserver) {
-      await installResizeObserver();
+      await loadPolyfillIfNeeded();
       this._resizeObserver = new ResizeObserver(
         debounce(() => this._measureForm(), 250, false)
       );
@@ -286,9 +286,9 @@ class HaScheduleForm extends LitElement {
     const value = [...this[`_${day}`]];
     const newValue = { ...this._item };
 
-    const endFormatted = formatTime24h(end);
+    const endFormatted = formatTime24h(end, this.hass.locale, this.hass.config);
     value.push({
-      from: formatTime24h(start),
+      from: formatTime24h(start, this.hass.locale, this.hass.config),
       to:
         !isSameDay(start, end) || endFormatted === "0:00"
           ? "24:00"
@@ -313,7 +313,7 @@ class HaScheduleForm extends LitElement {
     const value = this[`_${day}`][parseInt(index)];
     const newValue = { ...this._item };
 
-    const endFormatted = formatTime24h(end);
+    const endFormatted = formatTime24h(end, this.hass.locale, this.hass.config);
     newValue[day][index] = {
       from: value.from,
       to:
@@ -338,9 +338,9 @@ class HaScheduleForm extends LitElement {
     const newDay = weekdays[start.getDay()];
     const newValue = { ...this._item };
 
-    const endFormatted = formatTime24h(end);
+    const endFormatted = formatTime24h(end, this.hass.locale, this.hass.config);
     const event = {
-      from: formatTime24h(start),
+      from: formatTime24h(start, this.hass.locale, this.hass.config),
       to:
         !isSameDay(start, end) || endFormatted === "0:00"
           ? "24:00"

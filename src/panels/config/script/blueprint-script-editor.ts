@@ -102,13 +102,19 @@ export class HaBlueprintScriptEditor extends LitElement {
                     ([key, value]) =>
                       html`<ha-settings-row .narrow=${this.narrow}>
                         <span slot="heading">${value?.name || key}</span>
-                        <span slot="description">${value?.description}</span>
+                        <ha-markdown
+                          slot="description"
+                          class="card-content"
+                          breaks
+                          .content=${value?.description}
+                        ></ha-markdown>
                         ${value?.selector
                           ? html`<ha-selector
                               .hass=${this.hass}
                               .selector=${value.selector}
                               .key=${key}
                               .disabled=${this.disabled}
+                              .required=${value?.default === undefined}
                               .value=${(this.config.use_blueprint.input &&
                                 this.config.use_blueprint.input[key]) ??
                               value?.default}
@@ -116,7 +122,7 @@ export class HaBlueprintScriptEditor extends LitElement {
                             ></ha-selector>`
                           : html`<ha-textfield
                               .key=${key}
-                              required
+                              .required=${value?.default === undefined}
                               .disabled=${this.disabled}
                               .value=${(this.config.use_blueprint.input &&
                                 this.config.use_blueprint.input[key]) ??
@@ -168,7 +174,14 @@ export class HaBlueprintScriptEditor extends LitElement {
     }
     const input = { ...this.config.use_blueprint.input, [key]: value };
 
-    if (value === "" || value === undefined) {
+    const blueprint = this._blueprint;
+    const metaValue =
+      !blueprint || "error" in blueprint
+        ? undefined
+        : blueprint?.metadata.input && blueprint?.metadata?.input[key];
+    const keyDefault = metaValue && metaValue.default;
+
+    if ((value === "" && !keyDefault) || value === undefined) {
       delete input[key];
     }
 

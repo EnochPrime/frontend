@@ -1,18 +1,17 @@
 import "@material/mwc-button";
 import "@material/mwc-list";
 import { mdiClose } from "@mdi/js";
+import { HassEntity } from "home-assistant-js-websocket";
 import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { ifDefined } from "lit/directives/if-defined";
 import memoizeOne from "memoize-one";
 import { fireEvent } from "../../../common/dom/fire_event";
+import { computeStateName } from "../../../common/entity/compute_state_name";
 import "../../../components/ha-check-list-item";
 import "../../../components/search-input";
-import {
-  computeEntityRegistryName,
-  ExtEntityRegistryEntry,
-} from "../../../data/entity_registry";
-import { haStyle, haStyleDialog } from "../../../resources/styles";
+import { ExposeEntitySettings, voiceAssistants } from "../../../data/expose";
+import { haStyle } from "../../../resources/styles";
 import { HomeAssistant } from "../../../types";
 import "./entity-voice-settings";
 import { ExposeEntityDialogParams } from "./show-dialog-expose-entity";
@@ -43,37 +42,52 @@ class DialogExposeEntity extends LitElement {
       return nothing;
     }
 
+    const header = this.hass.localize(
+      "ui.panel.config.voice_assistants.expose.expose_dialog.header"
+    );
+
+    const entities = this._filterEntities(
+      this._params.exposedEntities,
+      this._filter
+    );
+
     return html`
-      <ha-dialog
-        open
-        @closed=${this.closeDialog}
-        .heading=${this.hass.localize(
-          "ui.panel.config.voice_assistants.expose.expose_dialog.header"
-        )}
-      >
-        <div slot="heading">
-          <h2 class="header">
-            ${this.hass.localize(
-              "ui.panel.config.voice_assistants.expose.expose_dialog.header"
-            )}
+      <ha-dialog open @closed=${this.closeDialog} .heading=${header}>
+        <ha-dialog-header slot="heading" show-border>
+          <h2 class="header" slot="title">
+            ${header}
+            <span class="subtitle">
+              ${this.hass.localize(
+                "ui.panel.config.voice_assistants.expose.expose_dialog.expose_to",
+                {
+                  assistants: this._params.filterAssistants
+                    .map((ass) => voiceAssistants[ass].name)
+                    .join(", "),
+                }
+              )}
+            </span>
           </h2>
           <ha-icon-button
             .label=${this.hass.localize("ui.dialogs.generic.close")}
             .path=${mdiClose}
             dialogAction="close"
-            class="header_button"
+            slot="navigationIcon"
           ></ha-icon-button>
           <search-input
             .hass=${this.hass}
             .filter=${this._filter}
             @value-changed=${this._filterChanged}
           ></search-input>
-        </div>
+        </ha-dialog-header>
         <mwc-list multi>
-          ${this._filterEntities(
-            this._params.extendedEntities,
-            this._filter
-          ).map((entity) => this._renderItem(entity))}
+          <lit-virtualizer
+            scroller
+            class="ha-scrollbar"
+            @click=${this._itemClicked}
+            .items=${entities}
+            .renderItem=${this._renderItem}
+          >
+          </lit-virtualizer>
         </mwc-list>
         <mwc-button
           slot="primaryAction"
@@ -89,10 +103,7 @@ class DialogExposeEntity extends LitElement {
     `;
   }
 
-  private _handleSelected(ev) {
-    if (ev.detail.source !== "property") {
-      return;
-    }
+  private _handleSelected = (ev) => {
     const entityId = ev.target.value;
     if (ev.detail.selected) {
       if (this._selected.includes(entityId)) {
@@ -102,6 +113,11 @@ class DialogExposeEntity extends LitElement {
     } else {
       this._selected = this._selected.filter((item) => item !== entityId);
     }
+  };
+
+  private _itemClicked(ev) {
+    const listItem = ev.target.closest("ha-check-list-item");
+    listItem.selected = !listItem.selected;
   }
 
   private _filterChanged(e) {
@@ -109,24 +125,29 @@ class DialogExposeEntity extends LitElement {
   }
 
   private _filterEntities = memoizeOne(
-    (RegEntries: Record<string, ExtEntityRegistryEntry>, filter?: string) =>
-      Object.values(RegEntries).filter(
+    (
+      exposedEntities: Record<string, ExposeEntitySettings>,
+      filter?: string
+    ) => {
+      const lowerFilter = filter?.toLowerCase();
+      return Object.values(this.hass.states).filter(
         (entity) =>
           this._params!.filterAssistants.some(
-            (ass) => !entity.options?.[ass]?.should_expose
+            (ass) => !exposedEntities[entity.entity_id]?.[ass]
           ) &&
-          (!filter ||
-            entity.entity_id.includes(filter) ||
-            computeEntityRegistryName(this.hass!, entity)?.includes(filter))
-      )
+          (!lowerFilter ||
+            entity.entity_id.toLowerCase().includes(lowerFilter) ||
+            computeStateName(entity)?.toLowerCase().includes(lowerFilter))
+      );
+    }
   );
 
-  private _renderItem = (entity: ExtEntityRegistryEntry) => {
-    const entityState = this.hass.states[entity.entity_id];
-    return html`<ha-check-list-item
+  private _renderItem = (entityState: HassEntity) => html`
+    <ha-check-list-item
       graphic="icon"
-      .value=${entity.entity_id}
-      .selected=${this._selected.includes(entity.entity_id)}
+      twoLine
+      .value=${entityState.entity_id}
+      .selected=${this._selected.includes(entityState.entity_id)}
       @request-selected=${this._handleSelected}
     >
       <ha-state-icon
@@ -134,9 +155,10 @@ class DialogExposeEntity extends LitElement {
         slot="graphic"
         .state=${entityState}
       ></ha-state-icon>
-      ${computeEntityRegistryName(this.hass!, entity)}
-    </ha-check-list-item>`;
-  };
+      ${computeStateName(entityState)}
+      <span slot="secondary">${entityState.entity_id}</span>
+    </ha-check-list-item>
+  `;
 
   private _expose() {
     this._params!.exposeEntities(this._selected);
@@ -146,65 +168,84 @@ class DialogExposeEntity extends LitElement {
   static get styles(): CSSResultGroup {
     return [
       haStyle,
-      haStyleDialog,
       css`
         ha-dialog {
           --dialog-content-padding: 0;
+          --mdc-dialog-min-width: 500px;
+          --mdc-dialog-max-width: 600px;
+        }
+        lit-virtualizer {
+          height: 500px;
         }
         search-input {
           width: 100%;
           display: block;
-          padding: 24px 16px 0;
           box-sizing: border-box;
+          --text-field-suffix-padding-left: 8px;
         }
         .header {
+          margin: 0;
           pointer-events: auto;
           -webkit-font-smoothing: antialiased;
-          font-family: var(
-            --mdc-typography-headline6-font-family,
-            var(--mdc-typography-font-family, Roboto, sans-serif)
-          );
-          font-size: var(--mdc-typography-headline6-font-size, 1.25rem);
-          line-height: var(--mdc-typography-headline6-line-height, 2rem);
-          font-weight: var(--mdc-typography-headline6-font-weight, 500);
-          letter-spacing: var(
-            --mdc-typography-headline6-letter-spacing,
-            0.0125em
-          );
-          text-decoration: var(
-            --mdc-typography-headline6-text-decoration,
-            inherit
-          );
-          text-transform: var(
-            --mdc-typography-headline6-text-transform,
-            inherit
-          );
-          display: block;
-          position: relative;
-          flex-shrink: 0;
+          font-weight: inherit;
+          font-size: inherit;
           box-sizing: border-box;
-          margin: 0 0 1px;
-          padding: 24px 24px 0 24px;
-          padding-bottom: 15px;
-          color: var(--mdc-dialog-heading-ink-color, rgba(0, 0, 0, 0.87));
-          border-bottom: 1px solid rgba(0, 0, 0, 0.12);
-          margin-bottom: 0;
-          border-color: var(
-            --mdc-dialog-scroll-divider-color,
-            rgba(0, 0, 0, 0.12)
-          );
+          display: flex;
+          flex-direction: column;
+          margin: -4px 0;
         }
-        .header_button {
-          position: absolute;
-          right: 16px;
-          top: 14px;
-          text-decoration: none;
-          color: inherit;
+        .subtitle {
+          color: var(--secondary-text-color);
+          font-size: 1rem;
+          line-height: normal;
         }
-        .header_button {
-          inset-inline-start: initial;
-          inset-inline-end: 16px;
-          direction: var(--direction);
+        lit-virtualizer {
+          width: 100%;
+          contain: size layout !important;
+        }
+        ha-check-list-item {
+          width: 100%;
+          height: 72px;
+        }
+        ha-check-list-item ha-state-icon {
+          margin-left: 24px;
+          margin-inline-start: 24px;
+          margin-inline-end: initial;
+        }
+        @media all and (max-height: 800px) {
+          lit-virtualizer {
+            height: 334px;
+          }
+        }
+        @media all and (max-height: 600px) {
+          lit-virtualizer {
+            height: 238px;
+          }
+        }
+        @media all and (max-width: 500px), all and (max-height: 500px) {
+          ha-dialog {
+            --mdc-dialog-min-width: calc(
+              100vw - env(safe-area-inset-right) - env(safe-area-inset-left)
+            );
+            --mdc-dialog-max-width: calc(
+              100vw - env(safe-area-inset-right) - env(safe-area-inset-left)
+            );
+            --mdc-dialog-min-height: 100%;
+            --mdc-dialog-max-height: 100%;
+            --vertical-align-dialog: flex-end;
+            --ha-dialog-border-radius: 0px;
+          }
+          lit-virtualizer {
+            height: calc(100vh - 198px);
+          }
+          search-input {
+            --text-field-suffix-padding-left: unset;
+          }
+          ha-check-list-item ha-state-icon {
+            margin-left: 8px;
+            margin-inline-start: 8px;
+            margin-inline-end: initial;
+          }
         }
       `,
     ];

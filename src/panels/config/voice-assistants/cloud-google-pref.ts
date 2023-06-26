@@ -2,7 +2,9 @@ import "@material/mwc-button";
 import { mdiHelpCircle } from "@mdi/js";
 import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { property, state } from "lit/decorators";
+import memoizeOne from "memoize-one";
 import { fireEvent } from "../../../common/dom/fire_event";
+import { isEmptyFilter } from "../../../common/entity/entity_filter";
 import "../../../components/ha-alert";
 import "../../../components/ha-card";
 import "../../../components/ha-settings-row";
@@ -10,17 +12,22 @@ import type { HaSwitch } from "../../../components/ha-switch";
 import "../../../components/ha-textfield";
 import type { HaTextField } from "../../../components/ha-textfield";
 import { CloudStatusLoggedIn, updateCloudPref } from "../../../data/cloud";
-import { showSaveSuccessToast } from "../../../util/toast-saved-success";
-import { HomeAssistant } from "../../../types";
-import { brandsUrl } from "../../../util/brands-url";
-import { isEmptyFilter } from "../../../common/entity/entity_filter";
 import {
+  ExposeEntitySettings,
   getExposeNewEntities,
   setExposeNewEntities,
-} from "../../../data/voice";
+} from "../../../data/expose";
+import { HomeAssistant } from "../../../types";
+import { brandsUrl } from "../../../util/brands-url";
+import { showSaveSuccessToast } from "../../../util/toast-saved-success";
 
 export class CloudGooglePref extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
+
+  @property({ attribute: false }) public exposedEntities?: Record<
+    string,
+    ExposeEntitySettings
+  >;
 
   @property({ attribute: false }) public cloudStatus?: CloudStatusLoggedIn;
 
@@ -35,6 +42,14 @@ export class CloudGooglePref extends LitElement {
       );
     }
   }
+
+  private _exposedEntitiesCount = memoizeOne(
+    (exposedEntities: Record<string, ExposeEntitySettings>) =>
+      Object.entries(exposedEntities).filter(
+        ([entityId, expose]) =>
+          expose["cloud.google_assistant"] && entityId in this.hass.states
+      ).length
+  );
 
   protected render() {
     if (!this.cloudStatus) {
@@ -215,17 +230,28 @@ export class CloudGooglePref extends LitElement {
                     `
                   : ""}`}
         </div>
-        <div class="card-actions">
-          <a
-            href="/config/voice-assistants/expose?assistants=cloud.google_assistant&historyBack"
-          >
-            <mwc-button>
-              ${this.hass.localize(
-                "ui.panel.config.cloud.account.google.manage_entities"
-              )}
-            </mwc-button>
-          </a>
-        </div>
+        ${google_enabled
+          ? html`<div class="card-actions">
+              <a
+                href="/config/voice-assistants/expose?assistants=cloud.google_assistant&historyBack"
+              >
+                <mwc-button>
+                  ${manualConfig
+                    ? this.hass!.localize(
+                        "ui.panel.config.cloud.account.google.show_entities"
+                      )
+                    : this.hass.localize(
+                        "ui.panel.config.cloud.account.google.exposed_entities",
+                        {
+                          number: this.exposedEntities
+                            ? this._exposedEntitiesCount(this.exposedEntities)
+                            : 0,
+                        }
+                      )}
+                </mwc-button>
+              </a>
+            </div>`
+          : nothing}
       </ha-card>
     `;
   }
@@ -338,6 +364,8 @@ export class CloudGooglePref extends LitElement {
       img {
         height: 28px;
         margin-right: 16px;
+        margin-inline-end: 16px;
+        margin-inline-start: initial;
       }
     `;
   }

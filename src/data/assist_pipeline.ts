@@ -5,19 +5,32 @@ import type { SpeechMetadata } from "./stt";
 
 export interface AssistPipeline {
   id: string;
-  conversation_engine: string;
-  language: string;
   name: string;
-  stt_engine: string;
-  tts_engine: string;
+  language: string;
+  conversation_engine: string;
+  conversation_language: string | null;
+  stt_engine: string | null;
+  stt_language: string | null;
+  tts_engine: string | null;
+  tts_language: string | null;
+  tts_voice: string | null;
 }
 
 export interface AssistPipelineMutableParams {
-  conversation_engine: string;
-  language: string;
   name: string;
-  stt_engine: string;
-  tts_engine: string;
+  language: string;
+  conversation_engine: string;
+  conversation_language: string | null;
+  stt_engine: string | null;
+  stt_language: string | null;
+  tts_engine: string | null;
+  tts_language: string | null;
+  tts_voice: string | null;
+}
+
+export interface assistRunListing {
+  pipeline_run_id: string;
+  timestamp: string;
 }
 
 interface PipelineEventBase {
@@ -66,6 +79,7 @@ interface PipelineIntentStartEvent extends PipelineEventBase {
   type: "intent-start";
   data: {
     engine: string;
+    language: string;
     intent_input: string;
   };
 }
@@ -80,6 +94,8 @@ interface PipelineTTSStartEvent extends PipelineEventBase {
   type: "tts-start";
   data: {
     engine: string;
+    language: string;
+    voice: string;
     tts_input: string;
   };
 }
@@ -90,7 +106,7 @@ interface PipelineTTSEndEvent extends PipelineEventBase {
   };
 }
 
-type PipelineRunEvent =
+export type PipelineRunEvent =
   | PipelineRunStartEvent
   | PipelineRunEndEvent
   | PipelineErrorEvent
@@ -112,13 +128,12 @@ export type PipelineRunOptions = (
     }
 ) & {
   end_stage: "stt" | "intent" | "tts";
-  language?: string;
   pipeline?: string;
   conversation_id?: string | null;
 };
 
 export interface PipelineRun {
-  init_options: PipelineRunOptions;
+  init_options?: PipelineRunOptions;
   events: PipelineRunEvent[];
   stage: "ready" | "stt" | "intent" | "tts" | "done" | "error";
   run: PipelineRunStartEvent["data"];
@@ -131,98 +146,145 @@ export interface PipelineRun {
     Partial<PipelineTTSEndEvent["data"]> & { done: boolean };
 }
 
-export const runAssistPipeline = (
+export const processEvent = (
+  run: PipelineRun | undefined,
+  event: PipelineRunEvent,
+  options?: PipelineRunOptions
+): PipelineRun | undefined => {
+  if (event.type === "run-start") {
+    run = {
+      init_options: options,
+      stage: "ready",
+      run: event.data,
+      events: [event],
+    };
+    return run;
+  }
+
+  if (!run) {
+    // eslint-disable-next-line no-console
+    console.warn("Received unexpected event before receiving session", event);
+    return undefined;
+  }
+
+  if (event.type === "stt-start") {
+    run = {
+      ...run,
+      stage: "stt",
+      stt: { ...event.data, done: false },
+    };
+  } else if (event.type === "stt-end") {
+    run = {
+      ...run,
+      stt: { ...run.stt!, ...event.data, done: true },
+    };
+  } else if (event.type === "intent-start") {
+    run = {
+      ...run,
+      stage: "intent",
+      intent: { ...event.data, done: false },
+    };
+  } else if (event.type === "intent-end") {
+    run = {
+      ...run,
+      intent: { ...run.intent!, ...event.data, done: true },
+    };
+  } else if (event.type === "tts-start") {
+    run = {
+      ...run,
+      stage: "tts",
+      tts: { ...event.data, done: false },
+    };
+  } else if (event.type === "tts-end") {
+    run = {
+      ...run,
+      tts: { ...run.tts!, ...event.data, done: true },
+    };
+  } else if (event.type === "run-end") {
+    run = { ...run, stage: "done" };
+  } else if (event.type === "error") {
+    run = { ...run, stage: "error", error: event.data };
+  } else {
+    run = { ...run };
+  }
+
+  run.events = [...run.events, event];
+
+  return run;
+};
+
+export const runDebugAssistPipeline = (
   hass: HomeAssistant,
-  callback: (event: PipelineRun) => void,
+  callback: (run: PipelineRun) => void,
   options: PipelineRunOptions
 ) => {
   let run: PipelineRun | undefined;
 
-  const unsubProm = hass.connection.subscribeMessage<PipelineRunEvent>(
+  const unsubProm = runAssistPipeline(
+    hass,
     (updateEvent) => {
-      if (updateEvent.type === "run-start") {
-        run = {
-          init_options: options,
-          stage: "ready",
-          run: updateEvent.data,
-          error: undefined,
-          stt: undefined,
-          intent: undefined,
-          tts: undefined,
-          events: [updateEvent],
-        };
+      run = processEvent(run, updateEvent, options);
+
+      if (updateEvent.type === "run-end" || updateEvent.type === "error") {
+        unsubProm.then((unsub) => unsub());
+      }
+
+      if (run) {
         callback(run);
-        return;
       }
-
-      if (!run) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          "Received unexpected event before receiving session",
-          updateEvent
-        );
-        return;
-      }
-
-      if (updateEvent.type === "stt-start") {
-        run = {
-          ...run,
-          stage: "stt",
-          stt: { ...updateEvent.data, done: false },
-        };
-      } else if (updateEvent.type === "stt-end") {
-        run = {
-          ...run,
-          stt: { ...run.stt!, ...updateEvent.data, done: true },
-        };
-      } else if (updateEvent.type === "intent-start") {
-        run = {
-          ...run,
-          stage: "intent",
-          intent: { ...updateEvent.data, done: false },
-        };
-      } else if (updateEvent.type === "intent-end") {
-        run = {
-          ...run,
-          intent: { ...run.intent!, ...updateEvent.data, done: true },
-        };
-      } else if (updateEvent.type === "tts-start") {
-        run = {
-          ...run,
-          stage: "tts",
-          tts: { ...updateEvent.data, done: false },
-        };
-      } else if (updateEvent.type === "tts-end") {
-        run = {
-          ...run,
-          tts: { ...run.tts!, ...updateEvent.data, done: true },
-        };
-      } else if (updateEvent.type === "run-end") {
-        run = { ...run, stage: "done" };
-        unsubProm.then((unsub) => unsub());
-      } else if (updateEvent.type === "error") {
-        run = { ...run, stage: "error", error: updateEvent.data };
-        unsubProm.then((unsub) => unsub());
-      } else {
-        run = { ...run };
-      }
-
-      run.events = [...run.events, updateEvent];
-
-      callback(run);
     },
-    {
-      ...options,
-      type: "assist_pipeline/run",
-    }
+    options
   );
 
   return unsubProm;
 };
 
-export const fetchAssistPipelines = (hass: HomeAssistant) =>
-  hass.callWS<AssistPipeline[]>({
+export const runAssistPipeline = (
+  hass: HomeAssistant,
+  callback: (event: PipelineRunEvent) => void,
+  options: PipelineRunOptions
+) =>
+  hass.connection.subscribeMessage<PipelineRunEvent>(callback, {
+    ...options,
+    type: "assist_pipeline/run",
+  });
+
+export const listAssistPipelineRuns = (
+  hass: HomeAssistant,
+  pipeline_id: string
+) =>
+  hass.callWS<{
+    pipeline_runs: assistRunListing[];
+  }>({
+    type: "assist_pipeline/pipeline_debug/list",
+    pipeline_id,
+  });
+
+export const getAssistPipelineRun = (
+  hass: HomeAssistant,
+  pipeline_id: string,
+  pipeline_run_id: string
+) =>
+  hass.callWS<{
+    events: PipelineRunEvent[];
+  }>({
+    type: "assist_pipeline/pipeline_debug/get",
+    pipeline_id,
+    pipeline_run_id,
+  });
+
+export const listAssistPipelines = (hass: HomeAssistant) =>
+  hass.callWS<{
+    pipelines: AssistPipeline[];
+    preferred_pipeline: string | null;
+  }>({
     type: "assist_pipeline/pipeline/list",
+  });
+
+export const getAssistPipeline = (hass: HomeAssistant, pipeline_id?: string) =>
+  hass.callWS<AssistPipeline>({
+    type: "assist_pipeline/pipeline/get",
+    pipeline_id,
   });
 
 export const createAssistPipeline = (
@@ -236,17 +298,31 @@ export const createAssistPipeline = (
 
 export const updateAssistPipeline = (
   hass: HomeAssistant,
-  pipelineId: string,
-  pipeline: Partial<AssistPipelineMutableParams>
+  pipeline_id: string,
+  pipeline: AssistPipelineMutableParams
 ) =>
   hass.callWS<AssistPipeline>({
     type: "assist_pipeline/pipeline/update",
-    pipeline_id: pipelineId,
+    pipeline_id,
     ...pipeline,
+  });
+
+export const setAssistPipelinePreferred = (
+  hass: HomeAssistant,
+  pipeline_id: string
+) =>
+  hass.callWS({
+    type: "assist_pipeline/pipeline/set_preferred",
+    pipeline_id,
   });
 
 export const deleteAssistPipeline = (hass: HomeAssistant, pipelineId: string) =>
   hass.callWS<void>({
     type: "assist_pipeline/pipeline/delete",
     pipeline_id: pipelineId,
+  });
+
+export const fetchAssistPipelineLanguages = (hass: HomeAssistant) =>
+  hass.callWS<{ languages: string[] }>({
+    type: "assist_pipeline/language/list",
   });

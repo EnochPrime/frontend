@@ -1,4 +1,4 @@
-import { Statistic } from "../../../data/recorder";
+import { Statistic, StatisticType } from "../../../data/recorder";
 import { ActionConfig, LovelaceCardConfig } from "../../../data/lovelace";
 import { FullCalendarView, TranslationDict } from "../../../types";
 import { Condition } from "../common/validate-condition";
@@ -10,7 +10,6 @@ import {
   LovelaceRowConfig,
 } from "../entity-rows/types";
 import { LovelaceHeaderFooterConfig } from "../header-footer/types";
-import { ExtendedStatisticType } from "../../../components/chart/statistics-chart";
 import { HaDurationData } from "../../../components/ha-duration-input";
 import { LovelaceTileFeatureConfig } from "../tile-features/types";
 
@@ -156,6 +155,13 @@ export interface EnergySourcesTableCardConfig extends LovelaceCardConfig {
 
 export interface EnergySolarGaugeCardConfig extends LovelaceCardConfig {
   type: "energy-solar-consumed-gauge";
+  title?: string;
+  collection_key?: string;
+}
+
+export interface EnergySelfSufficiencyGaugeCardConfig
+  extends LovelaceCardConfig {
+  type: "energy-self-sufficiency-gauge";
   title?: string;
   collection_key?: string;
 }
@@ -310,7 +316,7 @@ export interface StatisticsGraphCardConfig extends LovelaceCardConfig {
   unit?: string;
   days_to_show?: number;
   period?: "5minute" | "hour" | "day" | "month";
-  stat_types?: ExtendedStatisticType | ExtendedStatisticType[];
+  stat_types?: StatisticType | StatisticType[];
   chart_type?: "line" | "bar";
   hide_legend?: boolean;
 }
@@ -329,6 +335,7 @@ export interface StatisticCardConfig extends LovelaceCardConfig {
 
 export interface PictureCardConfig extends LovelaceCardConfig {
   image?: string;
+  image_entity?: string;
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
   double_tap_action?: ActionConfig;
@@ -339,6 +346,7 @@ export interface PictureCardConfig extends LovelaceCardConfig {
 export interface PictureElementsCardConfig extends LovelaceCardConfig {
   title?: string;
   image?: string;
+  image_entity?: string;
   camera_image?: string;
   camera_view?: HuiImage["cameraView"];
   state_image?: Record<string, unknown>;

@@ -567,7 +567,7 @@ class HUIRoot extends LitElement {
     if (searchParams.edit === "1") {
       this.lovelace!.setEditMode(true);
     } else if (searchParams.conversation === "1") {
-      showVoiceCommandDialog(this);
+      showVoiceCommandDialog(this, this.hass);
       window.history.replaceState(
         null,
         "",
@@ -793,7 +793,7 @@ class HUIRoot extends LitElement {
   }
 
   private _showVoiceCommandDialog(): void {
-    showVoiceCommandDialog(this);
+    showVoiceCommandDialog(this, this.hass);
   }
 
   private _handleEnableEditMode(ev: CustomEvent<RequestSelectedDetail>): void {
@@ -802,7 +802,7 @@ class HUIRoot extends LitElement {
     }
     if (this._yamlMode) {
       showAlertDialog(this, {
-        text: "The edit UI is not available when in YAML mode.",
+        text: this.hass!.localize("ui.panel.lovelace.editor.yaml_unsupported"),
       });
       return;
     }
@@ -1052,10 +1052,6 @@ class HUIRoot extends LitElement {
         #view {
           position: relative;
           display: flex;
-          background: var(
-            --lovelace-background,
-            var(--primary-background-color)
-          );
           padding-top: calc(var(--header-height) + env(safe-area-inset-top));
           min-height: 100vh;
           box-sizing: border-box;
@@ -1064,6 +1060,12 @@ class HUIRoot extends LitElement {
           padding-bottom: env(safe-area-inset-bottom);
         }
         hui-view {
+          background: var(
+            --lovelace-background,
+            var(--primary-background-color)
+          );
+        }
+        #view > * {
           flex: 1 1 100%;
           max-width: 100%;
         }

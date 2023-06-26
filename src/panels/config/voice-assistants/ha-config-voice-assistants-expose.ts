@@ -1,18 +1,26 @@
 import { consume } from "@lit-labs/context";
 import "@lrnwebcomponents/simple-tooltip/simple-tooltip";
 import {
-  mdiMinusCircle,
-  mdiMinusCircleOutline,
+  mdiCloseBoxMultiple,
+  mdiCloseCircleOutline,
+  mdiFilterVariant,
   mdiPlus,
-  mdiPlusCircle,
+  mdiPlusBoxMultiple,
 } from "@mdi/js";
-import { css, CSSResultGroup, html, LitElement, PropertyValues } from "lit";
+import {
+  css,
+  CSSResultGroup,
+  html,
+  LitElement,
+  nothing,
+  PropertyValues,
+} from "lit";
 import { customElement, property, query, state } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
 import { ifDefined } from "lit/directives/if-defined";
-import { styleMap } from "lit/directives/style-map";
 import memoize from "memoize-one";
-import { HASSDomEvent } from "../../../common/dom/fire_event";
+import { fireEvent, HASSDomEvent } from "../../../common/dom/fire_event";
+import { computeStateName } from "../../../common/entity/compute_state_name";
 import {
   EntityFilter,
   generateFilter,
@@ -27,33 +35,35 @@ import {
   SelectionChangedEvent,
 } from "../../../components/data-table/ha-data-table";
 import "../../../components/ha-fab";
+import { AlexaEntity, fetchCloudAlexaEntities } from "../../../data/alexa";
 import { CloudStatus, CloudStatusLoggedIn } from "../../../data/cloud";
 import { entitiesContext } from "../../../data/context";
 import {
-  computeEntityRegistryName,
-  EntityRegistryEntry,
   ExtEntityRegistryEntry,
   getExtendedEntityRegistryEntries,
 } from "../../../data/entity_registry";
 import {
   exposeEntities,
-  voiceAssistantKeys,
+  ExposeEntitySettings,
   voiceAssistants,
-} from "../../../data/voice";
+} from "../../../data/expose";
+import {
+  fetchCloudGoogleEntities,
+  GoogleEntity,
+} from "../../../data/google_assistant";
 import { showConfirmationDialog } from "../../../dialogs/generic/show-dialog-box";
 import "../../../layouts/hass-loading-screen";
 import "../../../layouts/hass-tabs-subpage-data-table";
 import type { HaTabsSubpageDataTable } from "../../../layouts/hass-tabs-subpage-data-table";
-import { SubscribeMixin } from "../../../mixins/subscribe-mixin";
 import { haStyle } from "../../../resources/styles";
 import { HomeAssistant, Route } from "../../../types";
-import { brandsUrl } from "../../../util/brands-url";
+import "./expose/expose-assistant-icon";
 import { voiceAssistantTabs } from "./ha-config-voice-assistants";
 import { showExposeEntityDialog } from "./show-dialog-expose-entity";
 import { showVoiceSettingsDialog } from "./show-dialog-voice-settings";
 
 @customElement("ha-config-voice-assistants-expose")
-export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
+export class VoiceAssistantsExpose extends LitElement {
   @property() public hass!: HomeAssistant;
 
   @property({ attribute: false }) public cloudStatus?: CloudStatus;
@@ -63,6 +73,11 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
   @property({ type: Boolean }) public narrow!: boolean;
 
   @property({ attribute: false }) public route!: Route;
+
+  @property({ attribute: false }) public exposedEntities?: Record<
+    string,
+    ExposeEntitySettings
+  >;
 
   @state()
   @consume({ context: entitiesContext, subscribe: true })
@@ -77,6 +92,11 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
   @state() private _searchParms = new URLSearchParams(window.location.search);
 
   @state() private _selectedEntities: string[] = [];
+
+  @state() private _supportedEntities?: Record<
+    "cloud.google_assistant" | "cloud.alexa" | "conversation",
+    string[] | undefined
+  >;
 
   @query("hass-tabs-subpage-data-table", true)
   private _dataTable!: HaTabsSubpageDataTable;
@@ -99,10 +119,21 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
   );
 
   private _columns = memoize(
-    (narrow, _language): DataTableColumnContainer => ({
+    (
+      narrow: boolean,
+      availableAssistants: string[],
+      supportedEntities:
+        | Record<
+            "cloud.google_assistant" | "cloud.alexa" | "conversation",
+            string[] | undefined
+          >
+        | undefined,
+      _language: string
+    ): DataTableColumnContainer => ({
       icon: {
         title: "",
         type: "icon",
+        hidden: narrow,
         template: (_, entry) => html`
           <ha-state-icon
             title=${ifDefined(entry.entity?.state)}
@@ -119,13 +150,11 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
         filterable: true,
         direction: "asc",
         grows: true,
-        template: narrow
-          ? (name, entry) =>
-              html`
-                ${name}<br />
-                <div class="secondary">${entry.entity_id}</div>
-              `
-          : undefined,
+        template: (name, entry) =>
+          html`
+            ${name}<br />
+            <div class="secondary">${entry.entity_id}</div>
+          `,
       },
       area: {
         title: this.hass.localize(
@@ -145,35 +174,23 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
         width: "160px",
         type: "flex",
         template: (assistants, entry) =>
-          html`${voiceAssistantKeys.map((key) =>
-            assistants.includes(key)
-              ? html`<div>
-                  <img
-                    style="height: 24px; margin-right: 16px;${styleMap({
-                      filter: entry.manAssistants?.includes(key)
-                        ? "grayscale(100%)"
-                        : "",
-                    })}"
-                    alt=""
-                    src=${brandsUrl({
-                      domain: voiceAssistants[key].domain,
-                      type: "icon",
-                      darkOptimized: this.hass.themes?.darkMode,
-                    })}
-                    referrerpolicy="no-referrer"
-                    slot="prefix"
-                  />${entry.manAssistants?.includes(key)
-                    ? html`<simple-tooltip
-                        animation-delay="0"
-                        position="bottom"
-                        offset="1"
-                      >
-                        Configured in YAML, not editable in UI
-                      </simple-tooltip>`
-                    : ""}
-                </div>`
-              : html`<div style="width: 40px;"></div>`
-          )}`,
+          html`${availableAssistants.map((key) => {
+            const supported =
+              !supportedEntities?.[key] ||
+              supportedEntities[key].includes(entry.entity_id);
+            const manual = entry.manAssistants?.includes(key);
+            return assistants.includes(key)
+              ? html`
+                  <voice-assistants-expose-assistant-icon
+                    .assistant=${key}
+                    .hass=${this.hass}
+                    .manual=${manual}
+                    .unsupported=${!supported}
+                  >
+                  </voice-assistants-expose-assistant-icon>
+                `
+              : html`<div style="width: 40px;"></div>`;
+          })}`,
       },
       aliases: {
         title: this.hass.localize(
@@ -181,6 +198,7 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
         ),
         sortable: true,
         filterable: true,
+        hidden: narrow,
         width: "15%",
         template: (aliases) =>
           aliases.length === 0
@@ -195,11 +213,18 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
       remove: {
         title: "",
         type: "icon-button",
+        hidden: narrow,
         template: () =>
           html`<ha-icon-button
             @click=${this._removeEntity}
-            .path=${mdiMinusCircleOutline}
+            .path=${mdiCloseCircleOutline}
           ></ha-icon-button>`,
+      },
+      // For search
+      entity_id: {
+        title: "",
+        hidden: true,
+        filterable: true,
       },
     })
   );
@@ -221,10 +246,36 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
     })
   );
 
+  private _availableAssistants = memoize(
+    (cloudStatus: CloudStatus | undefined) => {
+      const googleEnabled =
+        cloudStatus?.logged_in === true &&
+        cloudStatus.prefs.google_enabled === true;
+      const alexaEnabled =
+        cloudStatus?.logged_in === true &&
+        cloudStatus.prefs.alexa_enabled === true;
+
+      const showAssistants = [...Object.keys(voiceAssistants)];
+
+      if (!googleEnabled) {
+        showAssistants.splice(
+          showAssistants.indexOf("cloud.google_assistant"),
+          1
+        );
+      }
+
+      if (!alexaEnabled) {
+        showAssistants.splice(showAssistants.indexOf("cloud.alexa"), 1);
+      }
+
+      return showAssistants;
+    }
+  );
+
   private _filteredEntities = memoize(
     (
-      entities: HomeAssistant["entities"],
-      extEntities: Record<string, ExtEntityRegistryEntry> | undefined,
+      entities: Record<string, ExtEntityRegistryEntry>,
+      exposedEntities: Record<string, ExposeEntitySettings>,
       devices: HomeAssistant["devices"],
       areas: HomeAssistant["areas"],
       cloudStatus: CloudStatus | undefined,
@@ -237,7 +288,7 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
         cloudStatus?.logged_in === true &&
         cloudStatus.prefs.alexa_enabled === true;
 
-      const showAssistants = [...voiceAssistantKeys];
+      const showAssistants = [...this._availableAssistants(cloudStatus)];
 
       const alexaManual =
         alexaEnabled &&
@@ -250,25 +301,24 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
           (this.cloudStatus as CloudStatusLoggedIn).google_entities
         );
 
-      if (!googleEnabled || googleManual) {
+      if (googleManual) {
         showAssistants.splice(
           showAssistants.indexOf("cloud.google_assistant"),
           1
         );
       }
 
-      if (!alexaEnabled || alexaManual) {
+      if (alexaManual) {
         showAssistants.splice(showAssistants.indexOf("cloud.alexa"), 1);
       }
 
       const result: Record<string, DataTableRowData> = {};
 
-      let filteredEntities = Object.values(entities);
+      let filteredEntities = Object.values(this.hass.states);
 
       filteredEntities = filteredEntities.filter((entity) =>
         showAssistants.some(
-          (assis) =>
-            extEntities?.[entity.entity_id].options?.[assis]?.should_expose
+          (assis) => exposedEntities?.[entity.entity_id]?.[assis]
         )
       );
 
@@ -284,33 +334,38 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
             filteredAssistants.some(
               (assis) =>
                 !(assis === "cloud.alexa" && alexaManual) &&
-                extEntities?.[entity.entity_id].options?.[assis]?.should_expose
+                !(assis === "cloud.google_assistant" && googleManual) &&
+                exposedEntities?.[entity.entity_id]?.[assis]
             )
           );
         }
       });
 
-      for (const entry of filteredEntities) {
-        const entity = this.hass.states[entry.entity_id];
-        const areaId = entry.area_id ?? devices[entry.device_id!]?.area_id;
+      for (const entityState of filteredEntities) {
+        const entry: ExtEntityRegistryEntry | undefined =
+          entities[entityState.entity_id];
+        const areaId =
+          entry?.area_id ??
+          (entry?.device_id ? devices[entry.device_id!]?.area_id : undefined);
         const area = areaId ? areas[areaId] : undefined;
 
-        result[entry.entity_id] = {
-          entity_id: entry.entity_id,
-          entity,
-          name: computeEntityRegistryName(
-            this.hass!,
-            entry as EntityRegistryEntry
-          ),
+        result[entityState.entity_id] = {
+          entity_id: entityState.entity_id,
+          entity: entityState,
+          name:
+            computeStateName(entityState) ||
+            this.hass.localize(
+              "ui.panel.config.entities.picker.unnamed_entity"
+            ),
           area: area ? area.name : "—",
           assistants: Object.keys(
-            extEntities![entry.entity_id].options!
+            exposedEntities?.[entityState.entity_id]
           ).filter(
             (key) =>
               showAssistants.includes(key) &&
-              extEntities![entry.entity_id].options![key]?.should_expose
+              exposedEntities?.[entityState.entity_id]?.[key]
           ),
-          aliases: extEntities?.[entry.entity_id].aliases,
+          aliases: entry?.aliases || [],
         };
       }
 
@@ -321,22 +376,12 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
           (this.cloudStatus as CloudStatusLoggedIn).google_entities,
           (this.cloudStatus as CloudStatusLoggedIn).alexa_entities
         );
-        Object.keys(entities).forEach((entityId) => {
+        Object.keys(this.hass.states).forEach((entityId) => {
           const assistants: string[] = [];
-          if (
-            alexaManual &&
-            (!filteredAssistants ||
-              filteredAssistants.includes("cloud.alexa")) &&
-            manFilterFuncs.amazon(entityId)
-          ) {
+          if (alexaManual && manFilterFuncs.amazon(entityId)) {
             assistants.push("cloud.alexa");
           }
-          if (
-            googleManual &&
-            (!filteredAssistants ||
-              filteredAssistants.includes("cloud.google_assistant")) &&
-            manFilterFuncs.google(entityId)
-          ) {
+          if (googleManual && manFilterFuncs.google(entityId)) {
             assistants.push("cloud.google_assistant");
           }
           if (!assistants.length) {
@@ -345,31 +390,38 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
           if (entityId in result) {
             result[entityId].assistants.push(...assistants);
             result[entityId].manAssistants = assistants;
-          } else {
-            const entry = entities[entityId];
-            const areaId = entry.area_id ?? devices[entry.device_id!]?.area_id;
+          } else if (
+            !filteredAssistants ||
+            filteredAssistants.some((ass) => assistants.includes(ass))
+          ) {
+            const entityState = this.hass.states[entityId];
+            const entry: ExtEntityRegistryEntry | undefined =
+              entities[entityId];
+            const areaId =
+              entry?.area_id ??
+              (entry?.device_id
+                ? devices[entry.device_id!]?.area_id
+                : undefined);
             const area = areaId ? areas[areaId] : undefined;
             result[entityId] = {
-              entity_id: entry.entity_id,
-              entity: this.hass.states[entityId],
-              name: computeEntityRegistryName(
-                this.hass!,
-                entry as EntityRegistryEntry
-              ),
+              entity_id: entityState.entity_id,
+              entity: entityState,
+              name: computeStateName(entityState),
               area: area ? area.name : "—",
               assistants: [
-                ...(extEntities
-                  ? Object.keys(extEntities[entry.entity_id].options!).filter(
+                ...(exposedEntities
+                  ? Object.keys(
+                      exposedEntities?.[entityState.entity_id]
+                    ).filter(
                       (key) =>
                         showAssistants.includes(key) &&
-                        extEntities[entry.entity_id].options![key]
-                          ?.should_expose
+                        exposedEntities?.[entityState.entity_id]?.[key]
                     )
                   : []),
                 ...assistants,
               ],
               manAssistants: assistants,
-              aliases: extEntities?.[entityId].aliases,
+              aliases: entry?.aliases || [],
             };
           }
         });
@@ -397,28 +449,60 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
     });
   }
 
-  private async _fetchExtendedEntities() {
+  private async _fetchEntities() {
     this._extEntities = await getExtendedEntityRegistryEntries(
       this.hass,
       Object.keys(this._entities)
     );
+    this._fetchSupportedEntities();
+  }
+
+  private async _fetchSupportedEntities() {
+    let alexaEntitiesProm: Promise<AlexaEntity[]> | undefined;
+    let googleEntitiesProm: Promise<GoogleEntity[]> | undefined;
+    if (this.cloudStatus?.logged_in && this.cloudStatus.prefs.alexa_enabled) {
+      alexaEntitiesProm = fetchCloudAlexaEntities(this.hass);
+    }
+    if (this.cloudStatus?.logged_in && this.cloudStatus.prefs.google_enabled) {
+      googleEntitiesProm = fetchCloudGoogleEntities(this.hass);
+    }
+    const [alexaEntities, googleEntities] = await Promise.all([
+      alexaEntitiesProm,
+      googleEntitiesProm,
+    ]);
+    this._supportedEntities = {
+      "cloud.alexa": alexaEntities?.map((entity) => entity.entity_id),
+      "cloud.google_assistant": googleEntities?.map(
+        (entity) => entity.entity_id
+      ),
+      // TODO add supported entity for assist
+      conversation: undefined,
+    };
   }
 
   public willUpdate(changedProperties: PropertyValues): void {
     if (changedProperties.has("_entities")) {
-      this._fetchExtendedEntities();
+      this._fetchEntities();
+      return;
+    }
+    if (
+      changedProperties.has("hass") &&
+      this.hass.config.state === "RUNNING" &&
+      changedProperties.get("hass")?.config.state !== this.hass.config.state
+    ) {
+      this._fetchSupportedEntities();
     }
   }
 
   protected render() {
-    if (!this.hass || this.hass.entities === undefined) {
+    if (!this.hass || !this.exposedEntities || !this._extEntities) {
       return html`<hass-loading-screen></hass-loading-screen>`;
     }
     const activeFilters = this._activeFilters(this._searchParms);
 
     const filteredEntities = this._filteredEntities(
-      this._entities,
       this._extEntities,
+      this.exposedEntities,
       this.hass.devices,
       this.hass.areas,
       this.cloudStatus,
@@ -434,7 +518,12 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
           : "/config"}
         .route=${this.route}
         .tabs=${voiceAssistantTabs}
-        .columns=${this._columns(this.narrow, this.hass.language)}
+        .columns=${this._columns(
+          this.narrow,
+          this._availableAssistants(this.cloudStatus),
+          this._supportedEntities,
+          this.hass.language
+        )}
         .data=${filteredEntities}
         .activeFilters=${activeFilters}
         .numHidden=${this._numHiddenEntities}
@@ -491,7 +580,7 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
                         <ha-icon-button
                           id="enable-btn"
                           @click=${this._exposeSelected}
-                          .path=${mdiPlusCircle}
+                          .path=${mdiPlusBoxMultiple}
                           .label=${this.hass.localize(
                             "ui.panel.config.voice_assistants.expose.expose"
                           )}
@@ -504,7 +593,7 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
                         <ha-icon-button
                           id="disable-btn"
                           @click=${this._unexposeSelected}
-                          .path=${mdiMinusCircle}
+                          .path=${mdiCloseBoxMultiple}
                           .label=${this.hass.localize(
                             "ui.panel.config.voice_assistants.expose.unexpose"
                           )}
@@ -530,6 +619,26 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
         >
           <ha-svg-icon slot="icon" .path=${mdiPlus}></ha-svg-icon>
         </ha-fab>
+        ${this.narrow && activeFilters?.length
+          ? html`
+              <ha-button-menu slot="filter-menu" multi>
+                <ha-icon-button
+                  slot="trigger"
+                  .label=${this.hass!.localize(
+                    "ui.panel.config.devices.picker.filter.filter"
+                  )}
+                  .path=${mdiFilterVariant}
+                ></ha-icon-button>
+                <mwc-list-item @click=${this._clearFilter}>
+                  ${this.hass.localize("ui.components.data-table.filtering_by")}
+                  ${activeFilters.join(", ")}
+                  <span class="clear">
+                    ${this.hass.localize("ui.common.clear")}
+                  </span>
+                </mwc-list-item>
+              </ha-button-menu>
+            `
+          : nothing}
       </hass-tabs-subpage-data-table>
     `;
   }
@@ -537,12 +646,14 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
   private _addEntry() {
     const assistants = this._searchParms.has("assistants")
       ? this._searchParms.get("assistants")!.split(",")
-      : voiceAssistantKeys;
+      : this._availableAssistants(this.cloudStatus);
     showExposeEntityDialog(this, {
       filterAssistants: assistants,
-      extendedEntities: this._extEntities!,
+      exposedEntities: this.exposedEntities!,
       exposeEntities: (entities) => {
-        exposeEntities(this.hass, assistants, entities, true);
+        exposeEntities(this.hass, assistants, entities, true).then(() =>
+          fireEvent(this, "exposed-entities-changed")
+        );
       },
     });
   }
@@ -563,14 +674,16 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
     const entityId = ev.currentTarget.closest(".mdc-data-table__row").rowId;
     const assistants = this._searchParms.has("assistants")
       ? this._searchParms.get("assistants")!.split(",")
-      : voiceAssistantKeys;
-    exposeEntities(this.hass, assistants, [entityId], false);
+      : this._availableAssistants(this.cloudStatus);
+    exposeEntities(this.hass, assistants, [entityId], false).then(() =>
+      fireEvent(this, "exposed-entities-changed")
+    );
   };
 
   private _unexposeSelected() {
     const assistants = this._searchParms.has("assistants")
       ? this._searchParms.get("assistants")!.split(",")
-      : voiceAssistantKeys;
+      : this._availableAssistants(this.cloudStatus);
     showConfirmationDialog(this, {
       title: this.hass.localize(
         "ui.panel.config.voice_assistants.expose.unexpose_confirm_title"
@@ -589,7 +702,12 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
       ),
       dismissText: this.hass.localize("ui.common.cancel"),
       confirm: () => {
-        exposeEntities(this.hass, assistants, this._selectedEntities, false);
+        exposeEntities(
+          this.hass,
+          assistants,
+          this._selectedEntities,
+          false
+        ).then(() => fireEvent(this, "exposed-entities-changed"));
         this._clearSelection();
       },
     });
@@ -598,7 +716,7 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
   private _exposeSelected() {
     const assistants = this._searchParms.has("assistants")
       ? this._searchParms.get("assistants")!.split(",")
-      : voiceAssistantKeys;
+      : this._availableAssistants(this.cloudStatus);
     showConfirmationDialog(this, {
       title: this.hass.localize(
         "ui.panel.config.voice_assistants.expose.expose_confirm_title"
@@ -617,7 +735,12 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
       ),
       dismissText: this.hass.localize("ui.common.cancel"),
       confirm: () => {
-        exposeEntities(this.hass, assistants, this._selectedEntities, true);
+        exposeEntities(
+          this.hass,
+          assistants,
+          this._selectedEntities,
+          true
+        ).then(() => fireEvent(this, "exposed-entities-changed"));
         this._clearSelection();
       },
     });
@@ -629,7 +752,14 @@ export class VoiceAssistantsExpose extends SubscribeMixin(LitElement) {
 
   private _openEditEntry(ev: CustomEvent): void {
     const entityId = (ev.detail as RowClickedEvent).id;
-    showVoiceSettingsDialog(this, { entityId });
+    showVoiceSettingsDialog(this, {
+      entityId,
+      exposed: this.exposedEntities![entityId],
+      extEntityReg: this._extEntities?.[entityId],
+      exposedEntitiesChanged: () => {
+        fireEvent(this, "exposed-entities-changed");
+      },
+    });
   }
 
   private _clearFilter() {

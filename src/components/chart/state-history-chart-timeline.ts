@@ -2,6 +2,7 @@ import type { ChartData, ChartDataset, ChartOptions } from "chart.js";
 import { css, CSSResultGroup, html, LitElement, PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { formatDateTimeWithSeconds } from "../../common/datetime/format_date_time";
+import millisecondsToDuration from "../../common/datetime/milliseconds_to_duration";
 import { fireEvent } from "../../common/dom/fire_event";
 import { numberFormatToLocale } from "../../common/number/format_number";
 import { computeRTL } from "../../common/util/compute_rtl";
@@ -97,6 +98,7 @@ export class StateHistoryChartTimeline extends LitElement {
           adapters: {
             date: {
               locale: this.hass.locale,
+              config: this.hass.config,
             },
           },
           suggestedMin: this.startTime,
@@ -173,10 +175,24 @@ export class StateHistoryChartTimeline extends LitElement {
             beforeBody: (context) => context[0].dataset.label || "",
             label: (item) => {
               const d = item.dataset.data[item.dataIndex] as TimeLineData;
+              const durationInMs = d.end.getTime() - d.start.getTime();
+              const formattedDuration = `${this.hass.localize(
+                "ui.components.history_charts.duration"
+              )}: ${millisecondsToDuration(durationInMs)}`;
+
               return [
                 d.label || "",
-                formatDateTimeWithSeconds(d.start, this.hass.locale),
-                formatDateTimeWithSeconds(d.end, this.hass.locale),
+                formatDateTimeWithSeconds(
+                  d.start,
+                  this.hass.locale,
+                  this.hass.config
+                ),
+                formatDateTimeWithSeconds(
+                  d.end,
+                  this.hass.locale,
+                  this.hass.config
+                ),
+                formattedDuration,
               ];
             },
             labelColor: (item) => ({

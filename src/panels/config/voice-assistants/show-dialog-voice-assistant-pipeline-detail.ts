@@ -5,11 +5,12 @@ import {
 } from "../../../data/assist_pipeline";
 
 export interface VoiceAssistantPipelineDetailsDialogParams {
+  cloudActiveSubscription?: boolean;
   pipeline?: AssistPipeline;
+  preferred?: boolean;
   createPipeline: (values: AssistPipelineMutableParams) => Promise<unknown>;
-  updatePipeline: (
-    updates: Partial<AssistPipelineMutableParams>
-  ) => Promise<unknown>;
+  updatePipeline: (updates: AssistPipelineMutableParams) => Promise<unknown>;
+  setPipelinePreferred: () => Promise<unknown>;
   deletePipeline: () => Promise<boolean>;
 }
 

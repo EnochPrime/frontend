@@ -1,37 +1,61 @@
 import "@material/mwc-list/mwc-list";
-import { mdiHelpCircle, mdiPlus } from "@mdi/js";
+import { mdiHelpCircle, mdiPlus, mdiStar } from "@mdi/js";
 import { css, CSSResultGroup, html, LitElement, PropertyValues } from "lit";
 import { property, state } from "lit/decorators";
+import memoizeOne from "memoize-one";
+import { formatLanguageCode } from "../../../common/language/format_language";
 import "../../../components/ha-alert";
+import "../../../components/ha-button";
 import "../../../components/ha-card";
 import "../../../components/ha-icon-next";
 import "../../../components/ha-list-item";
+import "../../../components/ha-svg-icon";
 import "../../../components/ha-switch";
-import "../../../components/ha-button";
 import {
+  AssistPipeline,
   createAssistPipeline,
   deleteAssistPipeline,
-  fetchAssistPipelines,
+  listAssistPipelines,
+  setAssistPipelinePreferred,
   updateAssistPipeline,
-  AssistPipeline,
 } from "../../../data/assist_pipeline";
+import { CloudStatus } from "../../../data/cloud";
+import { ExposeEntitySettings } from "../../../data/expose";
 import { showConfirmationDialog } from "../../../dialogs/generic/show-dialog-box";
 import type { HomeAssistant } from "../../../types";
-import { showVoiceAssistantPipelineDetailDialog } from "./show-dialog-voice-assistant-pipeline-detail";
 import { brandsUrl } from "../../../util/brands-url";
+import { showVoiceAssistantPipelineDetailDialog } from "./show-dialog-voice-assistant-pipeline-detail";
 
 export class AssistPref extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
 
+  @property({ attribute: false }) public exposedEntities?: Record<
+    string,
+    ExposeEntitySettings
+  >;
+
   @state() private _pipelines: AssistPipeline[] = [];
+
+  @state() private _preferred: string | null = null;
+
+  @property() public cloudStatus?: CloudStatus;
 
   protected firstUpdated(changedProps: PropertyValues) {
     super.firstUpdated(changedProps);
 
-    fetchAssistPipelines(this.hass).then((pipelines) => {
-      this._pipelines = pipelines;
+    listAssistPipelines(this.hass).then((pipelines) => {
+      this._pipelines = pipelines.pipelines;
+      this._preferred = pipelines.preferred_pipeline;
     });
   }
+
+  private _exposedEntitiesCount = memoizeOne(
+    (exposedEntities: Record<string, ExposeEntitySettings>) =>
+      Object.entries(exposedEntities).filter(
+        ([entityId, expose]) =>
+          expose.conversation && entityId in this.hass.states
+      ).length
+  );
 
   protected render() {
     return html`
@@ -71,7 +95,15 @@ export class AssistPref extends LitElement {
                 .id=${pipeline.id}
               >
                 ${pipeline.name}
-                <span slot="secondary">${pipeline.language}</span>
+                <span slot="secondary">
+                  ${formatLanguageCode(pipeline.language, this.hass.locale)}
+                </span>
+                ${this._preferred === pipeline.id
+                  ? html`<ha-svg-icon
+                      slot="meta"
+                      .path=${mdiStar}
+                    ></ha-svg-icon>`
+                  : ""}
                 <ha-icon-next slot="meta"></ha-icon-next>
               </ha-list-item>
             `
@@ -89,7 +121,12 @@ export class AssistPref extends LitElement {
           >
             <ha-button>
               ${this.hass.localize(
-                "ui.panel.config.voice_assistants.assistants.pipeline.manage_entities"
+                "ui.panel.config.voice_assistants.assistants.pipeline.exposed_entities",
+                {
+                  number: this.exposedEntities
+                    ? this._exposedEntitiesCount(this.exposedEntities)
+                    : 0,
+                }
               )}
             </ha-button>
           </a>
@@ -111,7 +148,10 @@ export class AssistPref extends LitElement {
 
   private async _openDialog(pipeline?: AssistPipeline): Promise<void> {
     showVoiceAssistantPipelineDetailDialog(this, {
+      cloudActiveSubscription:
+        this.cloudStatus?.logged_in && this.cloudStatus.active_subscription,
       pipeline,
+      preferred: pipeline?.id === this._preferred,
       createPipeline: async (values) => {
         const created = await createAssistPipeline(this.hass!, values);
         this._pipelines = this._pipelines!.concat(created);
@@ -125,6 +165,10 @@ export class AssistPref extends LitElement {
         this._pipelines = this._pipelines!.map((res) =>
           res === pipeline ? updated : res
         );
+      },
+      setPipelinePreferred: async () => {
+        await setAssistPipelinePreferred(this.hass!, pipeline!.id);
+        this._preferred = pipeline!.id;
       },
       deletePipeline: async () => {
         if (
@@ -144,13 +188,9 @@ export class AssistPref extends LitElement {
           return false;
         }
 
-        try {
-          await deleteAssistPipeline(this.hass!, pipeline!.id);
-          this._pipelines = this._pipelines!.filter((res) => res !== pipeline);
-          return true;
-        } catch (err: any) {
-          return false;
-        }
+        await deleteAssistPipeline(this.hass!, pipeline!.id);
+        this._pipelines = this._pipelines!.filter((res) => res !== pipeline);
+        return true;
       },
     });
   }
@@ -167,12 +207,25 @@ export class AssistPref extends LitElement {
         display: flex;
         flex-direction: row;
       }
+      :host([dir="rtl"]) .header-actions {
+        right: auto;
+        left: 0;
+      }
       .header-actions .icon-link {
         margin-top: -16px;
         margin-inline-end: 8px;
+        margin-inline-start: 8px;
         margin-right: 8px;
         direction: var(--direction);
         color: var(--secondary-text-color);
+      }
+      ha-list-item {
+        --mdc-list-item-meta-size: auto;
+        --mdc-list-item-meta-display: flex;
+      }
+      ha-svg-icon,
+      ha-icon-next {
+        width: 24px;
       }
       .add {
         margin: 0 16px 16px;
@@ -191,6 +244,8 @@ export class AssistPref extends LitElement {
       img {
         height: 28px;
         margin-right: 16px;
+        margin-inline-end: 16px;
+        margin-inline-start: initial;
       }
     `;
   }

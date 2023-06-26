@@ -1,11 +1,18 @@
+import { consume } from "@lit-labs/context";
 import { mdiDevices, mdiMicrophone } from "@mdi/js";
-import { customElement, property } from "lit/decorators";
+import { PropertyValues } from "lit";
+import { customElement, property, state } from "lit/decorators";
+import { CloudStatus } from "../../../data/cloud";
+import { entitiesContext } from "../../../data/context";
+import {
+  ExposeEntitySettings,
+  listExposedEntities,
+} from "../../../data/expose";
 import {
   HassRouterPage,
   RouterOptions,
 } from "../../../layouts/hass-router-page";
 import { HomeAssistant } from "../../../types";
-import { CloudStatus } from "../../../data/cloud";
 
 export const voiceAssistantTabs = [
   {
@@ -30,6 +37,28 @@ class HaConfigVoiceAssistants extends HassRouterPage {
 
   @property() public isWide!: boolean;
 
+  @state()
+  @consume({ context: entitiesContext, subscribe: true })
+  _entities!: HomeAssistant["entities"];
+
+  @state() private _exposedEntities?: Record<string, ExposeEntitySettings>;
+
+  public connectedCallback(): void {
+    super.connectedCallback();
+    this.addEventListener(
+      "exposed-entities-changed",
+      this._fetchExposedEntities
+    );
+  }
+
+  public disconnectedCallback(): void {
+    super.connectedCallback();
+    this.removeEventListener(
+      "exposed-entities-changed",
+      this._fetchExposedEntities
+    );
+  }
+
   protected routerOptions: RouterOptions = {
     defaultPage: "assistants",
     routes: {
@@ -43,11 +72,8 @@ class HaConfigVoiceAssistants extends HassRouterPage {
         load: () => import("./ha-config-voice-assistants-expose"),
       },
       debug: {
-        tag: "assist-pipeline-debug",
-        load: () =>
-          import(
-            "../integrations/integration-panels/voice_assistant/assist/assist-pipeline-debug"
-          ),
+        tag: "assist-debug",
+        load: () => import("./debug/assist-debug"),
       },
     },
   };
@@ -58,11 +84,30 @@ class HaConfigVoiceAssistants extends HassRouterPage {
     pageEl.narrow = this.narrow;
     pageEl.isWide = this.isWide;
     pageEl.route = this.routeTail;
+    pageEl.exposedEntities = this._exposedEntities;
   }
+
+  public willUpdate(changedProperties: PropertyValues): void {
+    if (changedProperties.has("_entities")) {
+      this._fetchExposedEntities();
+    }
+  }
+
+  private _fetchExposedEntities = async () => {
+    this._exposedEntities = (
+      await listExposedEntities(this.hass)
+    ).exposed_entities;
+    if (this.lastChild) {
+      (this.lastChild as any).exposedEntities = this._exposedEntities;
+    }
+  };
 }
 
 declare global {
   interface HTMLElementTagNameMap {
     "ha-config-voice-assistants": HaConfigVoiceAssistants;
+  }
+  interface HASSDomEvents {
+    "exposed-entities-changed": undefined;
   }
 }

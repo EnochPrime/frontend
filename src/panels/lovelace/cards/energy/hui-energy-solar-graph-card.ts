@@ -12,7 +12,7 @@ import {
   isToday,
   startOfToday,
 } from "date-fns/esm";
-import { UnsubscribeFunc } from "home-assistant-js-websocket";
+import { HassConfig, UnsubscribeFunc } from "home-assistant-js-websocket";
 import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
@@ -111,6 +111,7 @@ export class HuiEnergySolarGraphCard
               this._start,
               this._end,
               this.hass.locale,
+              this.hass.config,
               this._compareStart,
               this._compareEnd
             )}
@@ -135,6 +136,7 @@ export class HuiEnergySolarGraphCard
       start: Date,
       end: Date,
       locale: FrontendLocaleData,
+      config: HassConfig,
       compareStart?: Date,
       compareEnd?: Date
     ): ChartOptions => {
@@ -164,7 +166,8 @@ export class HuiEnergySolarGraphCard
             suggestedMax: end.getTime(),
             adapters: {
               date: {
-                locale: locale,
+                locale,
+                config,
               },
             },
             ticks: {
@@ -217,10 +220,11 @@ export class HuiEnergySolarGraphCard
                 }
                 const date = new Date(datasets[0].parsed.x);
                 return `${
-                  compare ? `${formatDateShort(date, locale)}: ` : ""
-                }${formatTime(date, locale)} – ${formatTime(
+                  compare ? `${formatDateShort(date, locale, config)}: ` : ""
+                }${formatTime(date, locale, config)} – ${formatTime(
                   addHours(date, 1),
-                  locale
+                  locale,
+                  config
                 )}`;
               },
               label: (context) =>
@@ -365,7 +369,6 @@ export class HuiEnergySolarGraphCard
         ? rgb2hex(lab2rgb(modifiedColor))
         : solarColor;
 
-      let prevValue: number | null = null;
       let prevStart: number | null = null;
 
       const solarProductionData: ScatterDataPoint[] = [];
@@ -375,24 +378,18 @@ export class HuiEnergySolarGraphCard
         const stats = statistics[source.stat_energy_from];
 
         for (const point of stats) {
-          if (point.sum === null || point.sum === undefined) {
-            continue;
-          }
-          if (prevValue === null || prevValue === undefined) {
-            prevValue = point.sum;
+          if (point.change === null || point.change === undefined) {
             continue;
           }
           if (prevStart === point.start) {
             continue;
           }
-          const value = point.sum - prevValue;
           const date = new Date(point.start);
           solarProductionData.push({
             x: date.getTime(),
-            y: value,
+            y: point.change,
           });
           prevStart = point.start;
-          prevValue = point.sum;
         }
       }
 

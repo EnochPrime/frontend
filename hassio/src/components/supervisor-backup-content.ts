@@ -1,12 +1,13 @@
 import { mdiFolder, mdiHomeAssistant, mdiPuzzle } from "@mdi/js";
-import { PaperInputElement } from "@polymer/paper-input/paper-input";
+import "@polymer/paper-input/paper-input";
+import type { PaperInputElement } from "@polymer/paper-input/paper-input";
 import {
   css,
   CSSResultGroup,
   html,
   LitElement,
-  TemplateResult,
   nothing,
+  TemplateResult,
 } from "lit";
 import { customElement, property, query } from "lit/decorators";
 import { atLeastVersion } from "../../../src/common/config/version";
@@ -23,8 +24,11 @@ import {
   HassioPartialBackupCreateParams,
 } from "../../../src/data/hassio/backup";
 import { Supervisor } from "../../../src/data/supervisor/supervisor";
-import { PolymerChangedEvent } from "../../../src/polymer-types";
-import { HomeAssistant, TranslationDict } from "../../../src/types";
+import {
+  HomeAssistant,
+  TranslationDict,
+  ValueChangedEvent,
+} from "../../../src/types";
 import "./supervisor-formfield-label";
 
 type BackupOrRestoreKey = keyof TranslationDict["supervisor"]["backup"] &
@@ -139,7 +143,11 @@ export class SupervisorBackupContent extends LitElement {
               : this._localize("partial_backup")}
             (${Math.ceil(this.backup.size * 10) / 10 + " MB"})<br />
             ${this.hass
-              ? formatDateTime(new Date(this.backup.date), this.hass.locale)
+              ? formatDateTime(
+                  new Date(this.backup.date),
+                  this.hass.locale,
+                  this.hass.config
+                )
               : this.backup.date}
           </div>`
         : html`<paper-input
@@ -332,7 +340,9 @@ export class SupervisorBackupContent extends LitElement {
     const data: any = {};
 
     if (!this.backup) {
-      data.name = this.backupName || formatDate(new Date(), this.hass.locale);
+      data.name =
+        this.backupName ||
+        formatDate(new Date(), this.hass.locale, this.hass.config);
     }
 
     if (this.backupHasPassword) {
@@ -416,7 +426,7 @@ export class SupervisorBackupContent extends LitElement {
     this[input.name] = input.value;
   }
 
-  private _handleTextValueChanged(ev: PolymerChangedEvent<string>) {
+  private _handleTextValueChanged(ev: ValueChangedEvent<string>) {
     const input = ev.currentTarget as PaperInputElement;
     this[input.name!] = ev.detail.value;
   }
